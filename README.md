@@ -71,6 +71,11 @@ EvilSeed.configure do |config|
     root.exclude(/.*/)
   end
 
+  # Exclude specific association on models whenever you hit them in the recursive call chain
+  config.restrict('Post') do |res|
+    res.exclude(/events/)
+  end
+
   # Transformations allows you to change dumped data e. g. to hide sensitive information
   config.customize("User") do |user_attributes|
     # Reset password for all users to the same for ease of debugging on developer's machine
