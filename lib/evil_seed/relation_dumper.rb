@@ -92,6 +92,8 @@ module EvilSeed
     def dump_belongs_to_associations!
       belongs_to_reflections.map do |reflection|
         next if to_load_map[reflection.name].empty?
+        restrictions = root_dumper.configuration.restrictions.select{|res| res.model == model_class.to_s}
+        next if restrictions.any?{|res| res.excluded?(reflection.name)}
         RelationDumper.new(
           build_relation(reflection),
           root_dumper,
@@ -106,6 +108,8 @@ module EvilSeed
     def dump_has_many_associations!
       has_many_reflections.map do |reflection|
         next if loaded_ids.empty? || total_limit.try(:zero?)
+        restrictions = root_dumper.configuration.restrictions.select{|res| res.model == model_class.to_s}
+        next if restrictions.any?{|res| res.excluded?(reflection.name)}
         RelationDumper.new(
           build_relation(reflection),
           root_dumper,

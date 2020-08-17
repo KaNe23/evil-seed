@@ -17,6 +17,10 @@ module EvilSeed
       @roots ||= []
     end
 
+    def restrictions
+      @restrictions ||= []
+    end
+
     def root(model, *constraints)
       new_root = Root.new(model, *constraints)
       yield new_root if block_given?
@@ -31,6 +35,12 @@ module EvilSeed
     def anonymize(model_class, &block)
       raise(ArgumentError, "You must provide block for #{__method__} method") unless block
       customizers[model_class.to_s] << Anonymizer.new(model_class, &block)
+    end
+
+    def restrict(model, *constraints)
+      new_exclusion = Exclusion.new(model, *constraints)
+      yield new_exclusion if block_given?
+      restrictions << new_exclusion
     end
 
     # Customizer objects for every model
