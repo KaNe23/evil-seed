@@ -23,18 +23,20 @@ module EvilSeed
 
     attr_reader :relation, :root_dumper, :model_class, :association_path, :search_key, :identifiers, :nullify_columns,
                 :belongs_to_reflections, :has_many_reflections, :foreign_keys, :loaded_ids, :to_load_map,
-                :record_dumper, :inverse_reflection, :table_names, :options
+                :record_dumper, :inverse_reflection, :table_names, :options, :types
 
     delegate :root, :configuration, :total_limit, :loaded_map, to: :root_dumper
 
     def initialize(relation, root_dumper, association_path, **options)
+      # @parent_elemtn          = parent
       @relation               = relation
       @root_dumper            = root_dumper
       @identifiers            = options[:identifiers]
       @to_load_map            = Hash.new { |h, k| h[k] = [] }
       @foreign_keys           = Hash.new { |h, k| h[k] = [] }
+      @types                  = {}
       @loaded_ids             = []
-      @model_class            = relation.klass
+      @model_class            = relation.try(:klass) || relation
       @search_key             = options[:search_key] || model_class.primary_key
       @association_path       = association_path
       @inverse_reflection     = options[:inverse_of]
@@ -77,14 +79,18 @@ module EvilSeed
     end
 
     def dump_record!(attributes)
+      # pp attributes
+      # pp nullify_columns
       nullify_columns.each do |nullify_column|
         attributes[nullify_column] = nil
       end
       return unless record_dumper.call(attributes)
+      # binding.pry
       foreign_keys.each do |reflection_name, fk_column|
         foreign_key = attributes[fk_column]
         next if foreign_key.nil? || loaded_map[table_names[reflection_name]].include?(foreign_key)
         to_load_map[reflection_name] << foreign_key
+        types[reflection_name] = attributes[fk_column.gsub('_id', '_type')] if types[reflection_name] == ""
       end
       loaded_ids << attributes[model_class.primary_key]
     end
@@ -94,22 +100,43 @@ module EvilSeed
         next if to_load_map[reflection.name].empty?
         restrictions = root_dumper.configuration.restrictions.select{|res| res.model == model_class.to_s}
         next if restrictions.any?{|res| res.excluded?(reflection.name)}
+        # binding.pry if restrictions.any?
+        puts "#{association_path}.#{reflection.name}"
+        # binding.pry if "#{association_path}.#{reflection.name}" == "contractor.stocks.depot"
+        # klass = build_relation(reflection)
+        # binding.pry if klass.abstract_class?
+        # binding.pry
+        # relation =  if reflection.polymorphic?
+        #               build_relation(reflection, types[reflection.name].safe_constantize)
+        #             else
+        #               build_relation(reflection)
+        #             end
+        # binding.pry
+        
+        klass = build_relation(reflection, klass: types[reflection.name])
+        # binding.pry if types[reflection.name]
         RelationDumper.new(
-          build_relation(reflection),
+          # build_relation(reflection),
+          klass,
           root_dumper,
           "#{association_path}.#{reflection.name}",
-          search_key:       reflection.association_primary_key,
+          # search_key:       reflection.association_primary_key,
+          search_key:       klass.primary_key,
           identifiers:      to_load_map[reflection.name],
           limitable:        false,
         ).call
       end
     end
 
+    
     def dump_has_many_associations!
       has_many_reflections.map do |reflection|
         next if loaded_ids.empty? || total_limit.try(:zero?)
         restrictions = root_dumper.configuration.restrictions.select{|res| res.model == model_class.to_s}
         next if restrictions.any?{|res| res.excluded?(reflection.name)}
+        # binding.pry if restrictions.any?
+        puts "#{association_path}.#{reflection.name}(#{loaded_ids.count})"
+        # binding.pry if loaded_ids.count > 0
         RelationDumper.new(
           build_relation(reflection),
           root_dumper,
@@ -126,8 +153,8 @@ module EvilSeed
     # @param relation [ActiveRecord::Relation]
     # @return [Array<Hash{String => String, Integer, Float, Boolean, nil}>]
     def fetch_attributes(relation)
-      relation.pluck(*model_class.attribute_names).map do |row|
-        Hash[model_class.attribute_names.zip(row)]
+      relation.pluck(*model_class.column_names).map do |row|
+        Hash[model_class.column_names.zip(row)]
       end
     end
 
@@ -136,8 +163,25 @@ module EvilSeed
       root_dumper.check_limits!(association_path)
     end
 
-    def build_relation(reflection)
-      relation = reflection.klass.all
+    def build_relation(reflection, klass: nil)
+      # binding.pry if reflection.instance_variable_get("@klass").nil?
+      # relation = if reflection.instance_variable_get("@klass").nil?
+      #               reflection.active_record
+      #             else
+      #               reflection.klass.all
+      #             end
+      # relation = begin
+      #              reflection.klass.all
+      #            rescue
+      #              reflection.active_record
+      #            end
+      # binding.pry
+      relation = if klass
+                   klass.safe_constantize
+                 else
+                   reflection.klass.all
+                 end
+      # relation = reflection.klass.all
       relation = relation.instance_eval(&reflection.scope) if reflection.scope
       relation = relation.where(reflection.type => model_class.to_s) if reflection.options[:as] # polymorphic
       relation
@@ -145,13 +189,24 @@ module EvilSeed
 
     def setup_belongs_to_reflections
       model_class.reflect_on_all_associations(:belongs_to).reject do |reflection|
-        next false if reflection.options[:polymorphic] # TODO: Add support for polymorphic belongs_to
-        excluded = root.excluded?("#{association_path}.#{reflection.name}") || reflection.name == inverse_reflection
+        # next false if reflection.options[:polymorphic] # TODO: Add support for polymorphic belongs_to
+        #excluded = root.excluded?("#{association_path}.#{reflection.name}") || reflection.name == inverse_reflection
+        excluded = root.excluded?("#{association_path}.#{reflection.name}")
         if excluded
           nullify_columns << reflection.foreign_key if model_class.attribute_names.include?(reflection.foreign_key)
         else
-          foreign_keys[reflection.name] = reflection.foreign_key
-          table_names[reflection.name]  = reflection.table_name
+          if reflection.options[:polymorphic]
+            foreign_keys[reflection.name] = reflection.foreign_key
+            table_names[reflection.name]  = reflection.active_record.table_name
+            types[reflection.name]        = "" # create slot
+            # puts "#{reflection.class_name} #{reflection.active_record.table_name}"
+            # types[reflection.name]        = 
+          else
+            foreign_keys[reflection.name] = reflection.foreign_key
+            table_names[reflection.name]  = reflection.active_record.table_name
+            # puts "#{reflection.table_name} #{reflection.active_record.table_name}"
+            # table_names[reflection.name]  = reflection.table_name
+          end
         end
         excluded
       end

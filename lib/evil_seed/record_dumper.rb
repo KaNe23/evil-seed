@@ -23,6 +23,7 @@ module EvilSeed
     # Extracts, transforms, and dumps record +attributes+
     # @return [Boolean] Was this record dumped or not
     def call(attributes)
+      # puts "dump: #{model_class}(#{attributes["id"]})"
       return false unless loaded!(attributes)
       write!(transform_and_anonymize(attributes))
       true
@@ -53,7 +54,7 @@ module EvilSeed
     def insert_statement
       connection = model_class.connection
       table_name = connection.quote_table_name(model_class.table_name)
-      columns    = model_class.attribute_names.map { |c| connection.quote_column_name(c) }.join(', ')
+      columns    = model_class.column_names.map { |c| connection.quote_column_name(c) }.join(', ')
       "INSERT INTO #{table_name} (#{columns}) VALUES\n"
     end
 
