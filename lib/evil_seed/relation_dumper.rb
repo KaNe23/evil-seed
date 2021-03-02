@@ -79,13 +79,11 @@ module EvilSeed
     end
 
     def dump_record!(attributes)
-      # pp attributes
-      # pp nullify_columns
       nullify_columns.each do |nullify_column|
         attributes[nullify_column] = nil
       end
       return unless record_dumper.call(attributes)
-      # binding.pry
+
       foreign_keys.each do |reflection_name, fk_column|
         foreign_key = attributes[fk_column]
         next if foreign_key.nil? || loaded_map[table_names[reflection_name]].include?(foreign_key)
@@ -100,27 +98,14 @@ module EvilSeed
         next if to_load_map[reflection.name].empty?
         restrictions = root_dumper.configuration.restrictions.select{|res| res.model == model_class.to_s}
         next if restrictions.any?{|res| res.excluded?(reflection.name)}
-        # binding.pry if restrictions.any?
+
         puts "#{association_path}.#{reflection.name}"
-        # binding.pry if "#{association_path}.#{reflection.name}" == "contractor.stocks.depot"
-        # klass = build_relation(reflection)
-        # binding.pry if klass.abstract_class?
-        # binding.pry
-        # relation =  if reflection.polymorphic?
-        #               build_relation(reflection, types[reflection.name].safe_constantize)
-        #             else
-        #               build_relation(reflection)
-        #             end
-        # binding.pry
-        
+
         klass = build_relation(reflection, klass: types[reflection.name])
-        # binding.pry if types[reflection.name]
         RelationDumper.new(
-          # build_relation(reflection),
           klass,
           root_dumper,
           "#{association_path}.#{reflection.name}",
-          # search_key:       reflection.association_primary_key,
           search_key:       klass.primary_key,
           identifiers:      to_load_map[reflection.name],
           limitable:        false,
@@ -128,15 +113,15 @@ module EvilSeed
       end
     end
 
-    
+
     def dump_has_many_associations!
       has_many_reflections.map do |reflection|
         next if loaded_ids.empty? || total_limit.try(:zero?)
         restrictions = root_dumper.configuration.restrictions.select{|res| res.model == model_class.to_s}
         next if restrictions.any?{|res| res.excluded?(reflection.name)}
-        # binding.pry if restrictions.any?
+
         puts "#{association_path}.#{reflection.name}(#{loaded_ids.count})"
-        # binding.pry if loaded_ids.count > 0
+
         RelationDumper.new(
           build_relation(reflection),
           root_dumper,
@@ -164,24 +149,12 @@ module EvilSeed
     end
 
     def build_relation(reflection, klass: nil)
-      # binding.pry if reflection.instance_variable_get("@klass").nil?
-      # relation = if reflection.instance_variable_get("@klass").nil?
-      #               reflection.active_record
-      #             else
-      #               reflection.klass.all
-      #             end
-      # relation = begin
-      #              reflection.klass.all
-      #            rescue
-      #              reflection.active_record
-      #            end
-      # binding.pry
       relation = if klass
                    klass.safe_constantize
                  else
                    reflection.klass.all
                  end
-      # relation = reflection.klass.all
+
       relation = relation.instance_eval(&reflection.scope) if reflection.scope
       relation = relation.where(reflection.type => model_class.to_s) if reflection.options[:as] # polymorphic
       relation
@@ -189,8 +162,6 @@ module EvilSeed
 
     def setup_belongs_to_reflections
       model_class.reflect_on_all_associations(:belongs_to).reject do |reflection|
-        # next false if reflection.options[:polymorphic] # TODO: Add support for polymorphic belongs_to
-        #excluded = root.excluded?("#{association_path}.#{reflection.name}") || reflection.name == inverse_reflection
         excluded = root.excluded?("#{association_path}.#{reflection.name}")
         if excluded
           nullify_columns << reflection.foreign_key if model_class.attribute_names.include?(reflection.foreign_key)
@@ -199,13 +170,9 @@ module EvilSeed
             foreign_keys[reflection.name] = reflection.foreign_key
             table_names[reflection.name]  = reflection.active_record.table_name
             types[reflection.name]        = "" # create slot
-            # puts "#{reflection.class_name} #{reflection.active_record.table_name}"
-            # types[reflection.name]        = 
           else
             foreign_keys[reflection.name] = reflection.foreign_key
             table_names[reflection.name]  = reflection.active_record.table_name
-            # puts "#{reflection.table_name} #{reflection.active_record.table_name}"
-            # table_names[reflection.name]  = reflection.table_name
           end
         end
         excluded

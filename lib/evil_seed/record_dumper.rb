@@ -23,7 +23,6 @@ module EvilSeed
     # Extracts, transforms, and dumps record +attributes+
     # @return [Boolean] Was this record dumped or not
     def call(attributes)
-      # puts "dump: #{model_class}(#{attributes["id"]})"
       return false unless loaded!(attributes)
       write!(transform_and_anonymize(attributes))
       true
